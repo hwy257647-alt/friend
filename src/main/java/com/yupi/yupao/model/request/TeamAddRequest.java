@@ -8,8 +8,7 @@ import java.util.Date;
 /**
  * 创建队伍请求体
  *
- * @author <a href="https://github.com/liyupi">程序员鱼皮</a>
- * @from <a href="https://yupi.icu">编程导航知识星球</a>
+
  */
 @Data
 public class TeamAddRequest implements Serializable {
@@ -46,7 +45,6 @@ public class TeamAddRequest implements Serializable {
      */
     private Integer status;
 
-    // [加入星球](https://www.code-nav.cn/) 从 0 到 1 项目实战，经验拉满！10+ 原创项目手把手教程、7 日项目提升训练营、60+ 编程经验分享直播、1000+ 项目经验笔记
 
     /**
      * 密码

@@ -8,8 +8,6 @@ import java.util.Date;
 /**
  * 队伍和用户信息封装类（脱敏）
  *
- * @author <a href="https://github.com/liyupi">程序员鱼皮</a>
- * @from <a href="https://yupi.icu">编程导航知识星球</a>
  */
 @Data
 public class TeamUserVO implements Serializable {
@@ -26,7 +24,6 @@ public class TeamUserVO implements Serializable {
      */
     private String name;
 
-    // 作_者 【程序员_鱼皮】 https://space.bilibili.com/12890453/
 
     /**
      * 描述

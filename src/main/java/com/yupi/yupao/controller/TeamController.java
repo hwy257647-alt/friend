@@ -34,8 +34,6 @@ import java.util.stream.Collectors;
 /**
  * 队伍接口
  *
- * @author <a href="https://github.com/liyupi">程序员鱼皮</a>
- * @from <a href="https://yupi.icu">编程导航知识星球</a>
  */
 @RestController
 @RequestMapping("/team")
@@ -123,7 +121,7 @@ public class TeamController {
         return ResultUtils.success(teamList);
     }
 
-    // todo 查询分页
+    //
     @GetMapping("/list/page")
     public BaseResponse<Page<Team>> listTeamsByPage(TeamQuery teamQuery) {
         if (teamQuery == null) {
