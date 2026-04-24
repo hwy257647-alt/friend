@@ -38,7 +38,8 @@ create table team
     password    varchar(512) null comment '密码',
     createTime  datetime default CURRENT_TIMESTAMP null comment '创建时间',
     updateTime  datetime default CURRENT_TIMESTAMP null on update CURRENT_TIMESTAMP,
-    isDelete    tinyint  default 0 not null comment '是否删除'
+    isDelete    tinyint  default 0 not null comment '是否删除',
+    avatarUrl   varchar(1024)                      null comment '队伍头像'
 ) comment '队伍';
 
 -- 用户队伍关系
