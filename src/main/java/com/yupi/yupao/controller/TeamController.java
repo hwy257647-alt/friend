@@ -37,7 +37,6 @@ import java.util.stream.Collectors;
  */
 @RestController
 @RequestMapping("/team")
-@CrossOrigin(origins = {"http://localhost:3000"})
 @Slf4j
 public class TeamController {
 
@@ -184,7 +183,8 @@ public class TeamController {
         }
         User loginUser = userService.getLoginUser(request);
         teamQuery.setUserId(loginUser.getId());
-        List<TeamUserVO> teamList = teamService.listTeams(teamQuery, true);
+        //List<TeamUserVO> teamList = teamService.listTeams(teamQuery, true);
+        List<TeamUserVO> teamList = teamService.listMyCreateTeams(teamQuery, true);
         return ResultUtils.success(teamList);
     }
 
@@ -218,6 +218,7 @@ public class TeamController {
         List<Long> idList = new ArrayList<>(listMap.keySet());
         teamQuery.setIdList(idList);
         List<TeamUserVO> teamList = teamService.listTeams(teamQuery, true);
+        //List<TeamUserVO> teamList = teamService.listMyJoinTeams(teamQuery, true);
         return ResultUtils.success(teamList);
     }
 }

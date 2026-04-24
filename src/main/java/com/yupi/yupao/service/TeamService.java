@@ -70,4 +70,12 @@ public interface TeamService extends IService<Team> {
      * @return
      */
     boolean deleteTeam(long id, User loginUser);
+    /**
+     * 获取我创建的队伍
+     *
+     * @param teamQuery
+     * @param b
+     * @return
+     */
+    List<TeamUserVO> listMyCreateTeams(TeamQuery teamQuery, boolean b);
 }

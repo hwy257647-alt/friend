@@ -30,6 +30,11 @@ public class TeamUpdateRequest implements Serializable {
     private String description;
 
     /**
+     * 队伍头像
+     */
+    private String avatarUrl;
+
+    /**
      * 过期时间
      */
     private Date expireTime;

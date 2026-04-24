@@ -1,7 +1,6 @@
 package com.yupi.yupao.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
-import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.yupi.yupao.common.ErrorCode;
 import com.yupi.yupao.exception.BusinessException;
@@ -21,22 +20,16 @@ import com.yupi.yupao.service.UserService;
 import com.yupi.yupao.service.UserTeamService;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.lang3.time.CalendarUtils;
-import org.apache.commons.lang3.time.DateUtils;
-import org.apache.poi.ss.formula.functions.T;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.springframework.beans.BeanUtils;
-import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import javax.annotation.Resource;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.List;
-import java.util.Optional;
+import java.util.*;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 /**
  * 队伍服务实现类
@@ -170,6 +163,7 @@ public class TeamServiceImpl extends ServiceImpl<TeamMapper, Team>
             if (statusEnum == null) {
                 statusEnum = TeamStatusEnum.PUBLIC;
             }
+            // 仅管理员查询私密队伍
             if (!isAdmin && statusEnum.equals(TeamStatusEnum.PRIVATE)) {
                 throw new BusinessException(ErrorCode.NO_AUTH);
             }
@@ -372,6 +366,46 @@ public class TeamServiceImpl extends ServiceImpl<TeamMapper, Team>
         // 删除队伍
         return this.removeById(teamId);
     }
+
+    @Override
+    public List<TeamUserVO> listMyCreateTeams(TeamQuery teamQuery, boolean isAdmin) {
+        QueryWrapper<Team> queryWrapper = new QueryWrapper<>();
+        // 组合查询条件
+        if (teamQuery != null) {
+            Long userId = teamQuery.getUserId();
+            // 根据创建人来查询
+            if (userId != null && userId > 0) {
+                queryWrapper.eq("userId", userId);
+            }
+        }
+        // 不展示已过期的队伍
+        // expireTime is null or expireTime > now()
+        queryWrapper.and(qw -> qw.gt("expireTime", new Date()).or().isNull("expireTime"));
+        List<Team> teamList = this.list(queryWrapper);
+        if (CollectionUtils.isEmpty(teamList)) {
+            return new ArrayList<>();
+        }
+        List<TeamUserVO> teamUserVOList = new ArrayList<>();
+        // 关联查询创建人的用户信息
+        for (Team team : teamList) {
+            Long userId = team.getUserId();
+            if (userId == null) {
+                continue;
+            }
+            User user = userService.getById(userId);
+            TeamUserVO teamUserVO = new TeamUserVO();
+            BeanUtils.copyProperties(team, teamUserVO);
+            // 脱敏用户信息
+            if (user != null) {
+                UserVO userVO = new UserVO();
+                BeanUtils.copyProperties(user, userVO);
+                teamUserVO.setCreateUser(userVO);
+            }
+            teamUserVOList.add(teamUserVO);
+        }
+        return teamUserVOList;
+    }
+
 
     /**
      * 根据 id 获取队伍信息
