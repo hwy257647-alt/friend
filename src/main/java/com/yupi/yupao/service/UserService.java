@@ -5,7 +5,7 @@ import com.yupi.yupao.model.domain.User;
 import com.baomidou.mybatisplus.extension.service.IService;
 import com.yupi.yupao.model.vo.UserVO;
 
-import javax.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 
 /**
@@ -95,4 +95,12 @@ public interface UserService extends IService<User> {
      * @return
      */
     List<User> matchUsers(long num, User loginUser);
+
+    /**
+     * 使用AI大模型匹配最相似的用户
+     * @param num 返回的用户数量
+     * @param loginUser 当前登录用户
+     * @return 匹配的用户列表
+     */
+    List<User> matchUsersByAI(long num, User loginUser);
 }

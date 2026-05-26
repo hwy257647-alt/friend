@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.google.gson.Gson;
 import com.google.gson.TypeAdapter;
 import com.google.gson.reflect.TypeToken;
+import com.yupi.yupao.Tools.UserMatchTools;
 import com.yupi.yupao.common.ErrorCode;
 import com.yupi.yupao.constant.UserConstant;
 import com.yupi.yupao.exception.BusinessException;
@@ -16,13 +17,18 @@ import com.yupi.yupao.utils.AlgorithmUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.math3.util.Pair;
+import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.context.annotation.Lazy;
+import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.DigestUtils;
 
-import javax.annotation.Resource;
-import javax.servlet.http.HttpServletRequest;
+import jakarta.annotation.Resource;
+import jakarta.servlet.http.HttpServletRequest;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -42,10 +48,31 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
     @Resource
     private UserMapper userMapper;
 
+    @Resource
+    @Lazy
+    private ChatClient serviceChatClient;
+
+    @Resource
+    @Lazy
+    private UserMatchTools userMatchTools;
+
+    @Resource
+    private RedisTemplate<String, Object> redisTemplate;
+
+    @Resource
+    @Lazy
+    private UserServiceImpl self;
+
     /**
      * 盐值，混淆密码
      */
     private static final String SALT = "yupi";
+
+    private static final Gson GSON = new Gson();
+
+    private static final String MATCH_CACHE_KEY_PREFIX = "yupao:match:ai:";
+
+    private static final long CACHE_EXPIRE_MINUTES = 5;
 
     @Override
     public long userRegister(String userAccount, String userPassword, String checkPassword, String planetCode) {
@@ -135,6 +162,10 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
         User safetyUser = getSafetyUser(user);
         // 4. 记录用户的登录态
         request.getSession().setAttribute(USER_LOGIN_STATE, safetyUser);
+        // 5. 异步预计算匹配结果
+        if (StringUtils.isNotBlank(user.getTags())) {
+            self.precalculateMatchUsers(safetyUser);
+        }
         return safetyUser;
     }
 
@@ -223,7 +254,14 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
         if (oldUser == null) {
             throw new BusinessException(ErrorCode.NULL_ERROR);
         }
-        return userMapper.updateById(user);
+        int i = userMapper.updateById(user);
+        // 更新成功并且标签有被修改并且旧标签和新标签不一致，则删除redis中通过AI推荐的匹配结果
+        if (i > 0 && !oldUser.getTags().equals(user.getTags()) && user.getTags() != null){
+            //  删除redis中通过AI推荐的匹配结果
+            String cacheKey = MATCH_CACHE_KEY_PREFIX + loginUser.getId();
+            redisTemplate.delete(cacheKey);
+        }
+        return i;
     }
 
     @Override
@@ -331,6 +369,118 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
         }
         List<User> userList = userMapper.selectList(queryWrapper);
         return userList.stream().map(this::getSafetyUser).collect(Collectors.toList());
+    }
+
+    @Override
+    public List<User> matchUsersByAI(long num, User loginUser) {
+        // 1. 检查缓存
+        String cacheKey = MATCH_CACHE_KEY_PREFIX + loginUser.getId();
+        try {
+            Object cachedResult = redisTemplate.opsForValue().get(cacheKey);
+            if (cachedResult != null) {
+                log.info("从缓存返回匹配结果，用户ID: {}", loginUser.getId());
+                return GSON.fromJson(cachedResult.toString(), new TypeToken<List<User>>() {}.getType());
+            }
+        } catch (Exception e) {
+            log.warn("读取缓存失败", e);
+        }
+
+        // 2. 缓存未命中，调用大模型
+        String prompt = String.format("""
+                你是一个专业的交友匹配助手。
+                
+                【任务】
+                当前用户ID为 %d，请从数据库中找出与该用户最匹配的%d个用户，并返回这些用户的完整信息。
+                
+                【操作步骤】
+                1. 调用 getCurrentUserTags 工具获取当前用户的标签
+                2. 调用 getAllCandidateUsers 工具获取所有候选用户（排除当前用户）
+                3. 分析标签相似度，找出最匹配的%d个用户的ID
+                4. 调用 getUserByIds 工具，根据ID列表查询这些用户的完整信息
+                5. 返回完整的用户信息列表
+                
+                【匹配原则】
+                1. 标签相似度高（有共同兴趣、技能）
+                2. 标签互补（可以互相学习）
+                3. 综合考虑标签的语义相关性
+                
+                【输出格式】
+                请直接返回完整的用户信息列表（JSON格式），不要其他内容。
+                每个用户应包含：id、username、avatarUrl、tags 等字段。
+                【重要】tags 字段必须是 JSON 字符串格式，例如："tags": "[\\\\"java\\\\",\\\\"python\\\\"]"
+                """,
+                loginUser.getId(),
+                num,
+                num
+        );
+
+        String response;
+        try {
+            response = serviceChatClient.prompt()
+                    .user(prompt)
+                    .call()
+                    .content();
+
+            log.info("大模型返回的匹配结果: {}", response);
+        } catch (Exception e) {
+            log.error("调用大模型进行用户匹配失败", e);
+            return Collections.emptyList();
+        }
+
+        // 3. 直接解析大模型返回的用户列表
+        List<UserVO> matchedUsers;
+        try {
+            response = response.trim();
+            if (response.startsWith("```json")) {
+                response = response.substring(7);
+            }
+            if (response.endsWith("```")) {
+                response = response.substring(0, response.length() - 3);
+            }
+            response = response.trim();
+
+            matchedUsers = GSON.fromJson(response, new TypeToken<List<UserVO>>() {}.getType());
+        } catch (Exception e) {
+            log.error("解析大模型返回的JSON失败: {}", response, e);
+            return Collections.emptyList();
+        }
+
+        if (CollectionUtils.isEmpty(matchedUsers)) {
+            log.warn("大模型返回的匹配结果为空");
+            return Collections.emptyList();
+        }
+
+        // 4. 将 UserVO 转换为 User 并脱敏返回
+        List<User> result = matchedUsers.stream()
+                .map(vo -> {
+                    User user = new User();
+                    org.springframework.beans.BeanUtils.copyProperties(vo, user);
+                    return getSafetyUser(user);
+                })
+                .collect(Collectors.toList());
+
+        // 5. 写入缓存
+        try {
+            redisTemplate.opsForValue().set(cacheKey, GSON.toJson(result), CACHE_EXPIRE_MINUTES, TimeUnit.MINUTES);
+        } catch (Exception e) {
+            log.warn("写入缓存失败", e);
+        }
+
+        return result;
+    }
+
+    @Async
+    public void precalculateMatchUsers(User loginUser) {
+        if (StringUtils.isBlank(loginUser.getTags())) {
+            return;
+        }
+        try {
+            log.info("开始异步预计算匹配结果，用户ID: {}", loginUser.getId());
+            matchUsersByAI(10, loginUser);
+            log.info("异步预计算匹配结果完成，用户ID: {}", loginUser.getId());
+        } catch (Exception e) {
+            log.error("异步预计算匹配结果失败，用户ID: {}", loginUser.getId(), e);
+        }
     }
 
 }

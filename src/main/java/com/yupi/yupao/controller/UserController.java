@@ -18,8 +18,8 @@ import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.util.CollectionUtils;
 import org.springframework.web.bind.annotation.*;
 
-import javax.annotation.Resource;
-import javax.servlet.http.HttpServletRequest;
+import jakarta.annotation.Resource;
+import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
@@ -167,19 +167,35 @@ public class UserController {
     }
 
     /**
-     * 获取最匹配的用户
+     * 获取最匹配的用户(算法实现)
      *
      * @param num
      * @param request
      * @return
      */
+//    @GetMapping("/match")
+//    public BaseResponse<List<User>> matchUsers(long num, HttpServletRequest request) {
+//        if (num <= 0 || num > 20) {
+//            throw new BusinessException(ErrorCode.PARAMS_ERROR);
+//        }
+//        User user = userService.getLoginUser(request);
+//        return ResultUtils.success(userService.matchUsers(num, user));
+//    }
+
+    /**
+     * 获取最匹配的用户(AI大模型实现)
+     * 前端点击"心动模式"按钮调用此接口
+     *
+     * @param request
+     * @return 最匹配的10个用户列表
+     */
     @GetMapping("/match")
-    public BaseResponse<List<User>> matchUsers(long num, HttpServletRequest request) {
-        if (num <= 0 || num > 20) {
-            throw new BusinessException(ErrorCode.PARAMS_ERROR);
-        }
-        User user = userService.getLoginUser(request);
-        return ResultUtils.success(userService.matchUsers(num, user));
+    public BaseResponse<List<User>> matchUsers(HttpServletRequest request) {
+        User loginUser = userService.getLoginUser(request);
+        List<User> result = userService.matchUsersByAI(10, loginUser);
+        return ResultUtils.success(result);
     }
+
+
 
 }

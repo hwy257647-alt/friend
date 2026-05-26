@@ -1,12 +1,11 @@
 package com.yupi.yupao.service;
 
 import com.yupi.yupao.model.domain.User;
-import org.junit.Assert;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 
-import javax.annotation.Resource;
+import jakarta.annotation.Resource;
 import java.util.Arrays;
 import java.util.List;
 
@@ -97,6 +96,7 @@ public class UserServiceTest {
     public void testSearchUsersByTags() {
         List<String> tagNameList = Arrays.asList("java", "python");
         List<User> userList = userService.searchUsersByTags(tagNameList);
-        Assert.assertNotNull(userList);
+        //Assert.assertNotNull(userList);
+        Assertions.assertNotNull(userList);
     }
 }
