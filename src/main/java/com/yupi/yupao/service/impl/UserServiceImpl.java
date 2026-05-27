@@ -72,12 +72,12 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
 
     private static final String MATCH_CACHE_KEY_PREFIX = "yupao:match:ai:";
 
-    private static final long CACHE_EXPIRE_MINUTES = 5;
+    private static final long CACHE_EXPIRE_MINUTES = 1800;
 
     @Override
     public long userRegister(String userAccount, String userPassword, String checkPassword, String planetCode) {
         // 1. 校验
-        if (StringUtils.isAnyBlank(userAccount, userPassword, checkPassword, planetCode)) {
+        if (StringUtils.isAnyBlank(userAccount, userPassword, checkPassword)) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "参数为空");
         }
         if (userAccount.length() < 4) {
@@ -86,9 +86,9 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
         if (userPassword.length() < 8 || checkPassword.length() < 8) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "用户密码过短");
         }
-        if (planetCode.length() > 5) {
-            throw new BusinessException(ErrorCode.PARAMS_ERROR, "星球编号过长");
-        }
+//        if (planetCode.length() > 5) {
+//            throw new BusinessException(ErrorCode.PARAMS_ERROR, "星球编号过长");
+//        }
         // 账户不能包含特殊字符
         String validPattern = "[`~!@#$%^&*()+=|{}':;',\\\\[\\\\].<>/?~！@#￥%……&*（）——+|{}【】‘；：”“’。，、？]";
         Matcher matcher = Pattern.compile(validPattern).matcher(userAccount);
@@ -107,12 +107,12 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "账号重复");
         }
         // 星球编号不能重复
-        queryWrapper = new QueryWrapper<>();
-        queryWrapper.eq("planetCode", planetCode);
-        count = userMapper.selectCount(queryWrapper);
-        if (count > 0) {
-            throw new BusinessException(ErrorCode.PARAMS_ERROR, "编号重复");
-        }
+//        queryWrapper = new QueryWrapper<>();
+//        queryWrapper.eq("planetCode", planetCode);
+//        count = userMapper.selectCount(queryWrapper);
+//        if (count > 0) {
+//            throw new BusinessException(ErrorCode.PARAMS_ERROR, "编号重复");
+//        }
         // 2. 加密
         String encryptPassword = DigestUtils.md5DigestAsHex((SALT + userPassword).getBytes());
         // 3. 插入数据
@@ -244,7 +244,6 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
         if (userId <= 0) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR);
         }
-        // todo 补充校验，如果用户没有传任何要更新的值，就直接报错，不用执行 update 语句
         // 如果是管理员，允许更新任意用户
         // 如果不是管理员，只允许更新当前（自己的）信息
         if (!isAdmin(loginUser) && userId != loginUser.getId()) {
@@ -256,7 +255,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
         }
         int i = userMapper.updateById(user);
         // 更新成功并且标签有被修改并且旧标签和新标签不一致，则删除redis中通过AI推荐的匹配结果
-        if (i > 0 && !oldUser.getTags().equals(user.getTags()) && user.getTags() != null){
+        if (i > 0  && user.getTags() != null && !user.getTags().equals(oldUser.getTags())){
             //  删除redis中通过AI推荐的匹配结果
             String cacheKey = MATCH_CACHE_KEY_PREFIX + loginUser.getId();
             redisTemplate.delete(cacheKey);

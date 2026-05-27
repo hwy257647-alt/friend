@@ -94,6 +94,10 @@ public class TeamController {
         boolean isAdmin = userService.isAdmin(request);
         // 1、查询队伍列表
         List<TeamUserVO> teamList = teamService.listTeams(teamQuery, isAdmin);
+        // 如果队伍列表为空，直接返回
+        if (teamList.isEmpty()){
+            return ResultUtils.success(new ArrayList<>());
+        }
         final List<Long> teamIdList = teamList.stream().map(TeamUserVO::getId).collect(Collectors.toList());
         // 2、判断当前用户是否已加入队伍
         QueryWrapper<UserTeam> userTeamQueryWrapper = new QueryWrapper<>();
@@ -205,6 +209,10 @@ public class TeamController {
         QueryWrapper<UserTeam> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("userId", loginUser.getId());
         List<UserTeam> userTeamList = userTeamService.list(queryWrapper);
+        // 如果没有加入任何队伍，直接返回空集合
+        if (userTeamList.isEmpty()) {
+            return ResultUtils.success(List.of());
+        }
         // 取出不重复的队伍 id
         // teamId userId
         // 1, 2
