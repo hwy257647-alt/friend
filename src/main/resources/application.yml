@@ -1,12 +1,12 @@
 spring:
   profiles:
-    active: dev
+    active: prod
   application:
     name: yupao-backend
   # DataSource Config
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://mysql/yupao?serverTimezone=Asia/Shanghai
+    url: jdbc:mysql://mysql:3306/yupao?serverTimezone=Asia/Shanghai
     username: root
     password: 123
   # session 失效时间（分钟）
