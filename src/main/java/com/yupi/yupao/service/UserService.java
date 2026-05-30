@@ -103,4 +103,11 @@ public interface UserService extends IService<User> {
      * @return 匹配的用户列表
      */
     List<User> matchUsersByAI(long num, User loginUser);
+    /**
+     * 使用Embedding匹配最相似的用户
+     * @param num 返回的用户数量
+     * @param loginUser 当前登录用户
+     * @return 匹配的用户列表
+     */
+    List<User> matchUsersByEmbedding(long num, User loginUser);
 }

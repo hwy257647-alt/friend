@@ -190,10 +190,19 @@ public class UserController {
      * @param request
      * @return 最匹配的10个用户列表
      */
+//    @GetMapping("/match")
+//    public BaseResponse<List<User>> matchUsers(HttpServletRequest request) {
+//        User loginUser = userService.getLoginUser(request);
+//        List<User> result = userService.matchUsersByAI(10, loginUser);
+//        return ResultUtils.success(result);
+//    }
+
     @GetMapping("/match")
     public BaseResponse<List<User>> matchUsers(HttpServletRequest request) {
-        User loginUser = userService.getLoginUser(request);
-        List<User> result = userService.matchUsersByAI(10, loginUser);
+        long userId = userService.getLoginUser(request).getId();
+        // 根据用户id获取用户信息
+        User user = userService.getById(userId);
+        List<User> result = userService.matchUsersByEmbedding(10, user);
         return ResultUtils.success(result);
     }
 

@@ -18,6 +18,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.math3.util.Pair;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.document.Document;
+import org.springframework.ai.embedding.EmbeddingModel;
+import org.springframework.ai.vectorstore.SimpleVectorStore;
+import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.scheduling.annotation.Async;
@@ -25,6 +29,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.DigestUtils;
 
+import jakarta.annotation.PostConstruct;
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.*;
@@ -60,8 +65,59 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
     private RedisTemplate<String, Object> redisTemplate;
 
     @Resource
+    private EmbeddingModel embeddingModel;
+
+    private SimpleVectorStore vectorStore;
+
+    @Resource
     @Lazy
     private UserServiceImpl self;
+
+    @PostConstruct
+    public void initVectorStore() {
+        this.vectorStore = SimpleVectorStore.builder(embeddingModel).build();
+        loadAllUserVectors();
+    }
+
+    private void loadAllUserVectors() {
+        try {
+            QueryWrapper<User> queryWrapper = new QueryWrapper<>();
+            queryWrapper.select("id", "tags");
+            queryWrapper.isNotNull("tags");
+            queryWrapper.ne("tags", "");
+            List<User> users = userMapper.selectList(queryWrapper);
+            
+            if (CollectionUtils.isEmpty(users)) {
+                log.info("没有需要加载向量的用户");
+                return;
+            }
+
+            List<Document> documents = users.stream()
+                    .filter(user -> StringUtils.isNotBlank(user.getTags()))
+                    .map(user -> {
+                        String cleanTags = cleanTags(user.getTags());
+                        return new Document(cleanTags, Map.of("userId", String.valueOf(user.getId())));
+                    })
+                    .collect(Collectors.toList());
+
+            vectorStore.add(documents);
+            log.info("应用启动完成，已加载 {} 个用户向量到向量库", documents.size());
+        } catch (Exception e) {
+            log.error("应用启动时加载用户向量失败", e);
+        }
+    }
+
+    private String cleanTags(String tags) {
+        try {
+            List<String> tagList = GSON.fromJson(tags, new TypeToken<List<String>>(){}.getType());
+            if (tagList == null || tagList.isEmpty()) {
+                return "";
+            }
+            return String.join(" ", tagList);
+        } catch (Exception e) {
+            return tags.replaceAll("[\\[\\]\"',]", "").trim();
+        }
+    }
 
     /**
      * 盐值，混淆密码
@@ -124,6 +180,10 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
         if (!saveResult) {
             return -1;
         }
+        // 将用户标签插入向量库
+        if (StringUtils.isNotBlank(user.getTags())) {
+            syncUserVector(user);
+        }
         return user.getId();
     }
 
@@ -163,9 +223,9 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
         // 4. 记录用户的登录态
         request.getSession().setAttribute(USER_LOGIN_STATE, safetyUser);
         // 5. 异步预计算匹配结果
-        if (StringUtils.isNotBlank(user.getTags())) {
-            self.precalculateMatchUsers(safetyUser);
-        }
+//        if (StringUtils.isNotBlank(user.getTags())) {
+//            self.precalculateMatchUsers(safetyUser);
+//        }
         return safetyUser;
     }
 
@@ -254,11 +314,10 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
             throw new BusinessException(ErrorCode.NULL_ERROR);
         }
         int i = userMapper.updateById(user);
-        // 更新成功并且标签有被修改并且旧标签和新标签不一致，则删除redis中通过AI推荐的匹配结果
         if (i > 0  && user.getTags() != null && !user.getTags().equals(oldUser.getTags())){
-            //  删除redis中通过AI推荐的匹配结果
             String cacheKey = MATCH_CACHE_KEY_PREFIX + loginUser.getId();
             redisTemplate.delete(cacheKey);
+            syncUserVector(userMapper.selectById(userId));
         }
         return i;
     }
@@ -482,6 +541,61 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
         }
     }
 
+    @Override
+    public List<User> matchUsersByEmbedding(long num, User loginUser) {
+        String tags = loginUser.getTags();
+        if (StringUtils.isBlank(tags)) {
+            return List.of();
+        }
+
+        String cleanTags = cleanTags(tags);
+
+        List<Document> similarDocs = vectorStore.similaritySearch(
+                SearchRequest.builder()
+                        .query(cleanTags)
+                        .topK((int) num + 1)
+                        .similarityThreshold(0.3)
+                        .build()
+        );
+
+        if (CollectionUtils.isEmpty(similarDocs)) {
+            return List.of();
+        }
+
+        List<Long> topUserIds = similarDocs.stream()
+                .map(doc -> doc.getMetadata().get("userId"))
+                .filter(Objects::nonNull)
+                .map(Object::toString)
+                .mapToLong(Long::parseLong)
+                .filter(id -> id != loginUser.getId())
+                .limit(num)
+                .boxed()
+                .collect(Collectors.toList());
+
+        if (topUserIds.isEmpty()) {
+            return List.of();
+        }
+
+        return this.listByIds(topUserIds).stream()
+                .map(this::getSafetyUser)
+                .collect(Collectors.toList());
+    }
+
+    private void syncUserVector(User user) {
+        if (user == null || StringUtils.isBlank(user.getTags())) {
+            return;
+        }
+        try {
+            String docId = String.valueOf(user.getId());
+            vectorStore.delete(List.of(docId));
+            String cleanTags = cleanTags(user.getTags());
+            Document doc = new Document(cleanTags, Map.of("userId", String.valueOf(user.getId())));
+            vectorStore.add(List.of(doc));
+            log.info("同步用户向量成功，用户ID: {}", user.getId());
+        } catch (Exception e) {
+            log.error("同步用户向量失败，用户ID: {}", user.getId(), e);
+        }
+    }
 }
 
 
